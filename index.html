@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統風流量需求計算</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap');
+        
+        :root {
+            --industry-blue: #3b82f6;
+            --industry-dark: #1e293b;
+            --fan-speed: 0s;
+        }
+
+        body {
+            font-family: 'Roboto Mono', 'Noto Sans TC', monospace;
+            background-color: #0f172a;
+            color: #f1f5f9;
+        }
+
+        .industrial-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-left: 4px solid var(--industry-blue);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+        }
+
+        .input-field {
+            background: #0f172a;
+            border: 1px solid #475569;
+            color: #3b82f6;
+            font-weight: bold;
+        }
+
+        .input-field:focus {
+            border-color: #3b82f6;
+            ring: 2px solid rgba(59, 130, 246, 0.3);
+            outline: none;
+        }
+
+        .status-header {
+            background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            padding-right: 0.2em;
+        }
+
+        /* 風扇動畫 */
+        .fan-blade {
+            transform-origin: center;
+            animation: rotate var(--fan-speed) linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* 粒子流動動畫 */
+        .particle {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #60a5fa, transparent);
+            border-radius: 99px;
+            filter: blur(1px);
+        }
+
+        @keyframes flow {
+            0% { transform: translateX(0px); opacity: 0; }
+            50% { opacity: 0.8; }
+            100% { transform: translateX(250px); opacity: 0; }
+        }
+
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .parameter-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        /* 系統示意圖樣式 */
+        .chassis-box {
+            border: 2px solid #475569;
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 6px;
+            position: relative;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.4);
+            width: 320px;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-6xl mx-auto space-y-6">
+        <!-- Header -->
+        <header class="mb-4 border-b border-slate-700 pb-6 flex flex-col md:flex-row justify-between items-end">
+            <div>
+                <h1 class="text-4xl font-black status-header mb-1 uppercase italic tracking-tight">系統風流量需求計算 v4.7</h1>
+                <p class="text-[10px] text-slate-500 font-mono tracking-widest uppercase opacity-80">Created by Randy Chen | Visualized Engine</p>
+            </div>
+            <div class="text-xs text-slate-500 font-mono mt-4 md:mt-0">
+                ENV_DENSITY: <span class="text-emerald-500">1.225 kg/m³</span> | SIM_ENGINE: <span class="text-blue-500">ACTIVE</span>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Input Section (Left) -->
+            <div class="lg:col-span-4 space-y-6">
+                <div class="industrial-card p-6 h-full">
+                    <h2 class="text-lg font-bold mb-6 flex items-center text-blue-400 uppercase tracking-widest">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        熱負荷輸入 / Heat Load
+                    </h2>
+                    
+                    <div class="space-y-4">
+                        <div class="parameter-grid">
+                            <div class="col-span-2">
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">系統總發熱功率 Total Power (W)</label>
+                                <input type="number" id="power" value="500" oninput="calculate()" class="input-field w-full p-2 rounded text-lg">
+                            </div>
+                        </div>
+
+                        <div class="parameter-grid">
+                            <div>
+                                <label class="block text-[10px] font-bold text-blue-400 mb-1 uppercase">進風溫度 Ta (°C)</label>
+                                <input type="number" id="tempAmbient" value="35" oninput="calculate()" class="input-field w-full p-2 rounded text-lg">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-red-400 mb-1 uppercase">出風溫度 Tout (°C)</label>
+                                <input type="number" id="tempOutlet" value="50" oninput="calculate()" class="input-field w-full p-2 rounded text-lg">
+                            </div>
+                        </div>
+
+                        <hr class="border-slate-700 my-2">
+                        
+                        <div class="parameter-grid">
+                            <div class="col-span-2">
+                                <label class="block text-[10px] font-bold text-emerald-500 mb-1 uppercase">系統阻抗選擇 System Impedance</label>
+                                <select id="impedance" onchange="calculate()" class="input-field w-full p-2 rounded font-bold text-sm h-[46px]">
+                                    <option value="1.2">低阻抗 (開放式架構)</option>
+                                    <option value="1.8" selected>中阻抗 (一般伺服器/電腦)</option>
+                                    <option value="2.5">高阻抗 (高密度機箱)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="parameter-grid">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase">海拔高度 Altitude (m)</label>
+                                <input type="number" id="altitude" value="0" oninput="calculate()" class="input-field w-full p-2 rounded text-lg">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase"> 安全係數 Safety (%)</label>
+                                <input type="number" id="safety" value="20" oninput="calculate()" class="input-field w-full p-2 rounded text-lg">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Results Section (Right) -->
+            <div class="lg:col-span-8 space-y-6">
+                <!-- Result Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="industrial-card p-6 bg-slate-800/50">
+                        <p class="text-xs text-slate-400 font-bold uppercase mb-2">Required Airflow (Net)</p>
+                        <div class="flex items-baseline">
+                            <h3 class="text-5xl font-black text-blue-500" id="res-cfm">--</h3>
+                            <span class="ml-2 text-slate-500 font-bold">CFM</span>
+                        </div>
+                        <div class="mt-4 h-1 w-full bg-slate-700 rounded overflow-hidden">
+                            <div id="bar-cfm" class="h-full bg-blue-500 transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="industrial-card p-6 bg-slate-800/50">
+                        <p class="text-xs text-slate-400 font-bold uppercase mb-2">Required Airflow (w/ Safety)</p>
+                        <div class="flex items-baseline">
+                            <h3 class="text-5xl font-black text-emerald-500" id="res-cfm-safety">--</h3>
+                            <span class="ml-2 text-slate-500 font-bold">CFM</span>
+                        </div>
+                        <div id="temp-warning" class="mt-2 text-[10px] text-red-400 font-bold hidden">⚠️ 警告：目標溫度必須高於環境溫度</div>
+                    </div>
+                </div>
+
+                <!-- Technical Report -->
+                <div class="industrial-card p-6">
+                    <h2 class="text-lg font-bold mb-4 text-slate-200 uppercase tracking-widest border-b border-slate-700 pb-2">Technical Fan Report</h2>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-left">
+                        <div>
+                            <span class="block text-xs font-bold text-slate-500 uppercase">ΔT Allowed</span>
+                            <span class="text-xl font-bold text-blue-400" id="val-dt">--</span>
+                            <span class="text-[10px] text-slate-600">°C</span>
+                        </div>
+                        <div>
+                            <span class="block text-xs font-bold text-slate-500 uppercase">Air Density</span>
+                            <span class="text-xl font-bold text-blue-400" id="val-density">--</span>
+                            <span class="text-[10px] text-slate-600">kg/m³</span>
+                        </div>
+                        <div>
+                            <span class="block text-xs font-bold text-slate-500 uppercase">Airflow Required</span>
+                            <span class="text-xl font-bold text-blue-400" id="val-airflow">--</span>
+                            <span class="text-[10px] text-slate-600">CFM</span>
+                        </div>
+                        <div>
+                            <span class="block text-xs font-bold text-slate-500 uppercase">Airflow Required /W Safety</span>
+                            <span class="text-xl font-bold text-emerald-400" id="val-total-req">--</span>
+                            <span class="text-[10px] text-slate-600">CFM</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-black/30 p-3 rounded border border-slate-800 font-mono text-[10px] leading-relaxed text-slate-400">
+                        Formula: Q = P / (Cp * ρ * ΔT) | P: Power(W), Cp: 1005 J/kgK, ρ: Density(kg/m³), ΔT: Temp Rise(C)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Simulation Visualizer -->
+        <div class="industrial-card p-8 overflow-hidden relative min-h-[350px]">
+            <h2 class="text-sm font-bold mb-8 text-slate-400 uppercase tracking-widest flex justify-between border-b border-slate-700 pb-2">
+                System Airflow Simulation
+                <span id="sim-airflow-label" class="text-blue-400 font-mono">0 CFM</span>
+            </h2>
+            
+            <div class="relative flex items-center justify-center h-48">
+                <!-- System Chassis Box -->
+                <div class="chassis-box h-36 flex items-center justify-between px-6">
+                    
+                    <!-- Ta Label (Outside Left) -->
+                    <div class="absolute left-[-80px] top-1/2 -translate-y-1/2 text-center">
+                        <span class="text-[10px] text-blue-400 font-bold block uppercase mb-1">Inlet Ta</span>
+                        <span id="sim-ta-val" class="text-sm font-mono text-blue-300 font-bold bg-slate-900/90 px-2 py-1 rounded border border-blue-500/40">--°C</span>
+                        <div class="text-blue-500 mt-1 flex justify-center animate-pulse">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                        </div>
+                    </div>
+
+                    <!-- Internal Fan -->
+                    <div class="relative flex-shrink-0 z-10">
+                        <svg class="w-16 h-16 text-slate-500" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="48" fill="rgba(30, 41, 59, 0.8)" stroke="currentColor" stroke-width="2" stroke-dasharray="4 2"/>
+                            <g class="fan-blade text-blue-500">
+                                <path d="M50 50 L50 10 A15 15 0 0 1 65 25 Z" fill="currentColor"/>
+                                <path d="M50 50 L90 50 A15 15 0 0 1 75 65 Z" fill="currentColor"/>
+                                <path d="M50 50 L50 90 A15 15 0 0 1 35 75 Z" fill="currentColor"/>
+                                <path d="M50 50 L10 50 A15 15 0 0 1 25 35 Z" fill="currentColor"/>
+                                <circle cx="50" cy="50" r="8" fill="#0f172a"/>
+                            </g>
+                        </svg>
+                        <span class="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-500 uppercase whitespace-nowrap">Intake</span>
+                    </div>
+
+                    <!-- Main Component -->
+                    <div class="w-24 h-20 bg-slate-800/80 rounded flex flex-col items-center justify-center border border-slate-600 relative overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-t from-red-500/10 to-transparent"></div>
+                        <div class="w-8 h-8 border-2 border-red-500/50 animate-pulse bg-red-600/20 rounded shadow-[0_0_15px_rgba(239,68,68,0.2)]"></div>
+                        <span class="text-[8px] text-red-400 uppercase mt-1 font-black tracking-widest z-10">Heat</span>
+                    </div>
+                    
+                    <!-- Air Flow Particles -->
+                    <div id="particle-container" class="absolute inset-0 pointer-events-none overflow-hidden rounded"></div>
+
+                    <!-- Tout Label (Outside Right) -->
+                    <div class="absolute right-[-80px] top-1/2 -translate-y-1/2 text-center">
+                        <span class="text-[10px] text-red-400 font-bold block uppercase mb-1">Outlet Tout</span>
+                        <span id="sim-tout-val" class="text-sm font-mono text-red-300 font-bold bg-slate-900/90 px-2 py-1 rounded border border-red-500/40">--°C</span>
+                        <div class="text-red-500 mt-1 flex justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center mt-10">
+                <button onclick="window.print()" class="px-8 py-2 text-[10px] font-bold text-slate-500 border border-slate-800 rounded hover:bg-slate-800 hover:text-slate-300 transition uppercase tracking-[0.2em]">Generate Analysis PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 阻擋右鍵選單
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        function createParticles() {
+            const container = document.getElementById('particle-container');
+            container.innerHTML = '';
+            for(let i = 0; i < 25; i++) {
+                const p = document.createElement('div');
+                p.className = 'particle';
+                p.style.top = Math.random() * 100 + '%';
+                p.style.left = '0%';
+                p.style.width = (Math.random() * 40 + 15) + 'px';
+                p.style.animation = `flow ${0.3 + Math.random() * 0.6}s linear infinite`;
+                p.style.animationDelay = Math.random() * 2 + 's';
+                container.appendChild(p);
+            }
+        }
+
+        function updateAnimation(cfm, ta, tout) {
+            const root = document.documentElement;
+            const simAirflowLabel = document.getElementById('sim-airflow-label');
+            const container = document.getElementById('particle-container');
+            const simTa = document.getElementById('sim-ta-val');
+            const simTout = document.getElementById('sim-tout-val');
+            
+            simAirflowLabel.innerText = `${cfm} CFM`;
+            simTa.innerText = isNaN(ta) ? "--°C" : `${ta}°C`;
+            simTout.innerText = isNaN(tout) || tout <= ta ? "--°C" : `${tout}°C`;
+            
+            if (cfm > 0) {
+                const speed = Math.max(0.02, 120 / cfm);
+                root.style.setProperty('--fan-speed', speed + 's');
+                container.style.opacity = "1";
+            } else {
+                root.style.setProperty('--fan-speed', '0s');
+                container.style.opacity = "0";
+            }
+        }
+
+        function calculate() {
+            const P = parseFloat(document.getElementById('power').value);
+            const Ta = parseFloat(document.getElementById('tempAmbient').value);
+            const Tout = parseFloat(document.getElementById('tempOutlet').value);
+            const alt = parseFloat(document.getElementById('altitude').value);
+            const safety = parseFloat(document.getElementById('safety').value) / 100;
+            
+            const resCfm = document.getElementById('res-cfm');
+            const resCfmSafety = document.getElementById('res-cfm-safety');
+            const valAirflow = document.getElementById('val-airflow');
+            const valDt = document.getElementById('val-dt');
+            const valDensity = document.getElementById('val-density');
+            const valTotalReq = document.getElementById('val-total-req');
+            const barCfm = document.getElementById('bar-cfm');
+            const tempWarn = document.getElementById('temp-warning');
+
+            if (isNaN(P) || isNaN(Ta) || isNaN(Tout) || P <= 0) {
+                updateAnimation(0, Ta, Tout);
+                resCfm.innerText = "--";
+                resCfmSafety.innerText = "--";
+                return;
+            }
+
+            const dT = Tout - Ta;
+            if (dT <= 0) {
+                tempWarn.classList.remove('hidden');
+                resCfm.innerText = "N/A";
+                resCfmSafety.innerText = "N/A";
+                valAirflow.innerText = "--";
+                valTotalReq.innerText = "--";
+                updateAnimation(0, Ta, Tout);
+                return;
+            } else {
+                tempWarn.classList.add('hidden');
+            }
+            valDt.innerText = dT.toFixed(1);
+
+            const rho0 = 1.225;
+            const density = rho0 * Math.pow((1 - 0.0000225577 * alt), 5.25588);
+            valDensity.innerText = density.toFixed(3);
+
+            const Cp = 1005;
+            const massFlow = P / (Cp * dT);
+            const volFlowCms = massFlow / density;
+            const volFlowCfm = volFlowCms * 2118.88;
+            
+            const safetyCfm = volFlowCfm * (1 + safety);
+            const finalNetCfm = Math.round(volFlowCfm);
+            const finalSafetyCfm = Math.round(safetyCfm);
+
+            resCfm.innerText = finalNetCfm;
+            resCfmSafety.innerText = finalSafetyCfm;
+            valAirflow.innerText = finalNetCfm;
+            valTotalReq.innerText = finalSafetyCfm;
+            
+            barCfm.style.width = Math.min(100, (volFlowCfm / 500) * 100) + '%';
+            updateAnimation(finalNetCfm, Ta, Tout);
+        }
+
+        window.onload = () => {
+            createParticles();
+            calculate();
+        };
+    </script>
+</body>
+</html>
